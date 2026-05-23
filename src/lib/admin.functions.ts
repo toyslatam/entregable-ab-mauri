@@ -23,6 +23,7 @@ import {
 } from "@/lib/admin-session";
 import { parsePanaderiasWorkbook } from "@/lib/excel-import";
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
+import { getBlobReadWriteToken, requireBlobReadWriteToken } from "@/lib/blob-env";
 
 function sanitizeRowForPublic(row: PanaderiaRow): PanaderiaRow {
   const data = { ...(row.data as Record<string, unknown>) };
@@ -47,6 +48,18 @@ export const adminLogout = createServerFn({ method: "POST" }).handler(async () =
   return { ok: true };
 });
 
+/** Diagnóstico (solo admin): ¿el servidor ve el token de Blob? */
+export const blobStorageStatus = createServerFn({ method: "GET" }).handler(async () => {
+  assertAdminSession();
+  const token = getBlobReadWriteToken();
+  return {
+    configured: Boolean(token),
+    onVercel: Boolean(process.env.VERCEL),
+    vercelEnv: process.env.VERCEL_ENV ?? null,
+    tokenLength: token?.length ?? 0,
+  };
+});
+
 const BLOB_CONTENT_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-excel",
@@ -61,12 +74,7 @@ export const getBlobClientToken = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     assertAdminSession();
-    const rw = process.env.BLOB_READ_WRITE_TOKEN;
-    if (!rw) {
-      throw new Error(
-        "Falta BLOB_READ_WRITE_TOKEN. En Vercel: Storage → Blob → conectar al proyecto.",
-      );
-    }
+    const rw = requireBlobReadWriteToken();
     const clientToken = await generateClientTokenFromReadWriteToken({
       pathname: data.pathname,
       access: "private",
@@ -90,8 +98,7 @@ export const processPanaderiasFromBlob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     assertAdminSession();
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (!token) throw new Error("BLOB_READ_WRITE_TOKEN no configurado en Vercel");
+    const token = requireBlobReadWriteToken();
     const res = await fetch(data.blobUrl, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -119,8 +126,7 @@ export const processReleasedFromBlob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     assertAdminSession();
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (!token) throw new Error("BLOB_READ_WRITE_TOKEN no configurado en Vercel");
+    const token = requireBlobReadWriteToken();
     const res = await fetch(data.blobUrl, {
       headers: { Authorization: `Bearer ${token}` },
     });

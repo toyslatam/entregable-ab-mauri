@@ -66,8 +66,18 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   return brandedErrorResponse();
 }
 
+function applyRuntimeEnvBindings(env: unknown) {
+  if (!env || typeof env !== "object") return;
+  for (const [key, value] of Object.entries(env as Record<string, unknown>)) {
+    if (typeof value === "string" && value && process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    applyRuntimeEnvBindings(env);
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { put } from "@vercel/blob/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  blobStorageStatus,
   getBlobClientToken,
   processPanaderiasFromBlob,
   processReleasedFromBlob,
@@ -20,9 +21,10 @@ function safePath(name: string) {
 export function AdminPanel({ onLogout }: Props) {
   const qc = useQueryClient();
   const fetchBlobToken = useServerFn(getBlobClientToken);
-  const uploadExcelLegacy = useServerFn(uploadPanaderiasExcel);
+  const fetchBlobStatus = useServerFn(blobStorageStatus);
+  const uploadExcel = useServerFn(uploadPanaderiasExcel);
   const processExcel = useServerFn(processPanaderiasFromBlob);
-  const uploadFileLegacy = useServerFn(uploadReleasedFile);
+  const uploadReleasedDirect = useServerFn(uploadReleasedFile);
   const processReleased = useServerFn(processReleasedFromBlob);
 
   const [parsing, setParsing] = useState(false);
@@ -31,6 +33,13 @@ export function AdminPanel({ onLogout }: Props) {
 
   const [releaseMsg, setReleaseMsg] = useState<string | null>(null);
   const [releaseErr, setReleaseErr] = useState<string | null>(null);
+  const [blobAvailable, setBlobAvailable] = useState(false);
+
+  useEffect(() => {
+    fetchBlobStatus()
+      .then((s) => setBlobAvailable(s.configured))
+      .catch(() => setBlobAvailable(false));
+  }, [fetchBlobStatus]);
 
   async function uploadFileToBlob(file: File, folder: string) {
     const pathname = `uploads/${folder}/${Date.now()}-${safePath(file.name)}`;
@@ -43,18 +52,18 @@ export function AdminPanel({ onLogout }: Props) {
   }
 
   async function uploadPanaderiasViaBlob(file: File) {
-    setUploadMsg("Subiendo archivo a almacenamiento…");
+    setUploadMsg("Subiendo archivo (almacenamiento opcional)…");
     const blob = await uploadFileToBlob(file, "panaderias");
-    setUploadMsg("Procesando Excel en el servidor…");
+    setUploadMsg("Procesando Excel…");
     return processExcel({
       data: { blobUrl: blob.url, sourceFilename: file.name },
     });
   }
 
-  async function uploadPanaderiasViaBase64(file: File) {
+  async function uploadPanaderiasDirect(file: File) {
     const buf = await file.arrayBuffer();
-    setUploadMsg("Subiendo Excel al servidor…");
-    return uploadExcelLegacy({
+    setUploadMsg("Procesando Excel en el servidor…");
+    return uploadExcel({
       data: {
         contentBase64: arrayBufferToBase64(buf),
         sourceFilename: file.name,
@@ -67,16 +76,18 @@ export function AdminPanel({ onLogout }: Props) {
     setUploadMsg(null);
     setParsing(true);
     try {
-      let res: { inserted: number; sheetName: string };
-      try {
-        res = await uploadPanaderiasViaBlob(file);
-      } catch (blobErr) {
-        if (!import.meta.env.PROD && file.size <= MAX_UPLOAD_BYTES) {
-          res = await uploadPanaderiasViaBase64(file);
-        } else {
-          throw blobErr;
-        }
+      const needsBlob = file.size > MAX_UPLOAD_BYTES;
+      if (needsBlob && !blobAvailable) {
+        throw new Error(
+          `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)} MB. Sin Vercel Blob el límite es ~4 MB. Comprime el Excel o conecta Blob (opcional).`,
+        );
       }
+
+      const res =
+        needsBlob && blobAvailable
+          ? await uploadPanaderiasViaBlob(file)
+          : await uploadPanaderiasDirect(file);
+
       setUploadMsg(
         `✓ ${res.inserted} registros cargados (hoja "${res.sheetName}"). Cada nueva carga reemplaza la anterior.`,
       );
@@ -86,7 +97,7 @@ export function AdminPanel({ onLogout }: Props) {
       const msg = (e as Error).message;
       setUploadErr(
         msg.includes("Too Large") || msg.includes("413")
-          ? "Archivo demasiado grande. Conecta Vercel Blob o reduce el tamaño del Excel."
+          ? "Archivo demasiado grande para el servidor (~4 MB). Comprime el Excel o activa Vercel Blob (opcional)."
           : msg,
       );
       setUploadMsg(null);
@@ -99,15 +110,19 @@ export function AdminPanel({ onLogout }: Props) {
     setReleaseErr(null);
     setReleaseMsg(null);
     try {
-      try {
+      const needsBlob = file.size > MAX_UPLOAD_BYTES;
+      if (needsBlob && !blobAvailable) {
+        throw new Error("Archivo demasiado grande sin Vercel Blob (máx. ~4 MB).");
+      }
+
+      if (needsBlob && blobAvailable) {
         const blob = await uploadFileToBlob(file, "released");
         await processReleased({
           data: { blobUrl: blob.url, sourceFilename: file.name },
         });
-      } catch {
-        if (file.size > MAX_UPLOAD_BYTES) throw new Error("Archivo demasiado grande");
+      } else {
         const buf = await file.arrayBuffer();
-        await uploadFileLegacy({
+        await uploadReleasedDirect({
           data: { filename: file.name, contentBase64: arrayBufferToBase64(buf) },
         });
       }
@@ -139,7 +154,8 @@ export function AdminPanel({ onLogout }: Props) {
               ejemplo.xlsx
             </a>{" "}
             (hoja <code className="px-1 rounded bg-muted">Hoja1</code>). Cada carga{" "}
-            <strong>reemplaza</strong> la anterior.
+            <strong>reemplaza</strong> la anterior. No hace falta Vercel Blob si el archivo es menor
+            de ~4 MB.
           </p>
         </div>
         <input

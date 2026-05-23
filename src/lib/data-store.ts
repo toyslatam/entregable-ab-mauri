@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { head, put } from "@vercel/blob";
+import { getBlobReadWriteToken } from "@/lib/blob-env";
 
 export type PanaderiaRow = {
   id: number;
@@ -25,13 +26,24 @@ export type ReleasedMeta = {
 const BLOB_PANADERIAS = "data/panaderias.json";
 const BLOB_RELEASED_META = "data/released/meta.json";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const PANADERIAS_JSON = path.join(DATA_DIR, "panaderias.json");
-const RELEASED_DIR = path.join(DATA_DIR, "released");
-const RELEASED_META = path.join(RELEASED_DIR, "meta.json");
+function localDataDir() {
+  if (process.env.VERCEL) {
+    return path.join("/tmp", "ab-mauri-data");
+  }
+  return path.join(process.cwd(), "data");
+}
+
+function localPaths() {
+  const dir = localDataDir();
+  return {
+    panaderias: path.join(dir, "panaderias.json"),
+    releasedDir: path.join(dir, "released"),
+    releasedMeta: path.join(dir, "released", "meta.json"),
+  };
+}
 
 function blobToken() {
-  return process.env.BLOB_READ_WRITE_TOKEN;
+  return getBlobReadWriteToken();
 }
 
 function useBlobStorage() {
@@ -85,7 +97,7 @@ export async function loadPanaderias(): Promise<PanaderiasStore | null> {
     return JSON.parse(raw) as PanaderiasStore;
   }
   try {
-    const raw = await fs.readFile(PANADERIAS_JSON, "utf-8");
+    const raw = await fs.readFile(localPaths().panaderias, "utf-8");
     return JSON.parse(raw) as PanaderiasStore;
   } catch {
     return null;
@@ -106,8 +118,9 @@ export async function savePanaderias(
     await blobWrite(BLOB_PANADERIAS, json);
     return store;
   }
-  await ensureDir(DATA_DIR);
-  await fs.writeFile(PANADERIAS_JSON, json, "utf-8");
+  const paths = localPaths();
+  await ensureDir(path.dirname(paths.panaderias));
+  await fs.writeFile(paths.panaderias, json, "utf-8");
   return store;
 }
 
@@ -118,7 +131,7 @@ export async function loadReleasedMeta(): Promise<ReleasedMeta | null> {
     return JSON.parse(raw) as ReleasedMeta;
   }
   try {
-    const raw = await fs.readFile(RELEASED_META, "utf-8");
+    const raw = await fs.readFile(localPaths().releasedMeta, "utf-8");
     return JSON.parse(raw) as ReleasedMeta;
   } catch {
     return null;
@@ -141,9 +154,10 @@ export async function saveReleasedFile(
     await blobWrite(BLOB_RELEASED_META, JSON.stringify(meta));
     return meta;
   }
-  await ensureDir(RELEASED_DIR);
-  await fs.writeFile(path.join(RELEASED_DIR, storageName), bytes);
-  await fs.writeFile(RELEASED_META, JSON.stringify(meta), "utf-8");
+  const paths = localPaths();
+  await ensureDir(paths.releasedDir);
+  await fs.writeFile(path.join(paths.releasedDir, storageName), bytes);
+  await fs.writeFile(paths.releasedMeta, JSON.stringify(meta), "utf-8");
   return meta;
 }
 
@@ -156,7 +170,7 @@ export async function readReleasedFile(): Promise<{ meta: ReleasedMeta; bytes: B
     return { meta, bytes };
   }
   try {
-    const bytes = await fs.readFile(path.join(RELEASED_DIR, meta.storageName));
+    const bytes = await fs.readFile(path.join(localPaths().releasedDir, meta.storageName));
     return { meta, bytes };
   } catch {
     return null;
