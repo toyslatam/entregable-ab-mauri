@@ -23,7 +23,27 @@ import {
 } from "@/lib/admin-session";
 import { parsePanaderiasWorkbook } from "@/lib/excel-import";
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
-import { getBlobReadWriteToken, requireBlobReadWriteToken } from "@/lib/blob-env";
+import { get } from "@vercel/blob";
+import {
+  blobCmdOptions,
+  blobStorageConfigured,
+  getBlobReadWriteToken,
+  requireBlobReadWriteToken,
+} from "@/lib/blob-env";
+
+async function readPrivateBlobUrl(url: string): Promise<ArrayBuffer> {
+  const token = getBlobReadWriteToken();
+  if (token) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error("No se pudo leer el archivo subido");
+    return res.arrayBuffer();
+  }
+  const result = await get(url, { access: "private", ...blobCmdOptions() });
+  if (!result || result.statusCode !== 200 || !result.stream) {
+    throw new Error("No se pudo leer el archivo subido");
+  }
+  return new Response(result.stream).arrayBuffer();
+}
 
 function sanitizeRowForPublic(row: PanaderiaRow): PanaderiaRow {
   const data = { ...(row.data as Record<string, unknown>) };
@@ -53,7 +73,7 @@ export const blobStorageStatus = createServerFn({ method: "GET" }).handler(async
   assertAdminSession();
   const token = getBlobReadWriteToken();
   return {
-    configured: Boolean(token),
+    configured: blobStorageConfigured(),
     onVercel: Boolean(process.env.VERCEL),
     vercelEnv: process.env.VERCEL_ENV ?? null,
     tokenLength: token?.length ?? 0,
@@ -98,12 +118,7 @@ export const processPanaderiasFromBlob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     assertAdminSession();
-    const token = requireBlobReadWriteToken();
-    const res = await fetch(data.blobUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("No se pudo leer el archivo subido");
-    const buffer = await res.arrayBuffer();
+    const buffer = await readPrivateBlobUrl(data.blobUrl);
     const { sheetName, rows } = parsePanaderiasWorkbook(buffer);
     if (!rows.length) throw new Error(`No se encontraron filas en "${sheetName}"`);
     const store = await savePanaderias(rows, data.sourceFilename);
@@ -126,12 +141,7 @@ export const processReleasedFromBlob = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     assertAdminSession();
-    const token = requireBlobReadWriteToken();
-    const res = await fetch(data.blobUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error("No se pudo leer el archivo subido");
-    const bytes = new Uint8Array(await res.arrayBuffer());
+    const bytes = new Uint8Array(await readPrivateBlobUrl(data.blobUrl));
     await saveReleasedFile(data.sourceFilename, bytes);
     return { ok: true };
   });
@@ -148,9 +158,10 @@ export const uploadPanaderiasExcel = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     assertAdminSession();
-    const bytes = Uint8Array.from(atob(data.contentBase64), (c) => c.charCodeAt(0));
-    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-    const { sheetName, rows } = parsePanaderiasWorkbook(buffer);
+    const buffer = Buffer.from(data.contentBase64, "base64");
+    const { sheetName, rows } = parsePanaderiasWorkbook(
+      buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+    );
     if (!rows.length) throw new Error(`No se encontraron filas en "${sheetName}"`);
     const store = await savePanaderias(rows, data.sourceFilename);
     return {

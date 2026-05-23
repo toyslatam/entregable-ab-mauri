@@ -12,6 +12,19 @@ export function getBlobReadWriteToken(): string | undefined {
   return undefined;
 }
 
+/** En Vercel, persistir con Blob (token o OIDC + BLOB_STORE_ID al conectar el store). */
+export function shouldPersistWithBlob(): boolean {
+  if (getBlobReadWriteToken()) return true;
+  if (process.env.VERCEL) return true;
+  return false;
+}
+
+export function blobStorageConfigured(): boolean {
+  if (getBlobReadWriteToken()) return true;
+  if (process.env.BLOB_STORE_ID?.trim()) return true;
+  return false;
+}
+
 export function requireBlobReadWriteToken(): string {
   const token = getBlobReadWriteToken();
   if (token) return token;
@@ -20,6 +33,7 @@ export function requireBlobReadWriteToken(): string {
   );
 }
 
-export function blobStorageConfigured(): boolean {
-  return Boolean(getBlobReadWriteToken());
+export function blobCmdOptions(): { token?: string } {
+  const token = getBlobReadWriteToken();
+  return token ? { token } : {};
 }

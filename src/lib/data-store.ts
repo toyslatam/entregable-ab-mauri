@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { head, put } from "@vercel/blob";
-import { getBlobReadWriteToken } from "@/lib/blob-env";
+import { get, put } from "@vercel/blob";
+import { blobCmdOptions, shouldPersistWithBlob } from "@/lib/blob-env";
 
 export type PanaderiaRow = {
   id: number;
@@ -26,64 +26,66 @@ export type ReleasedMeta = {
 const BLOB_PANADERIAS = "data/panaderias.json";
 const BLOB_RELEASED_META = "data/released/meta.json";
 
-function localDataDir() {
-  if (process.env.VERCEL) {
-    return path.join("/tmp", "ab-mauri-data");
-  }
-  return path.join(process.cwd(), "data");
-}
+const LOCAL_DATA_DIR = path.join(process.cwd(), "data");
 
 function localPaths() {
-  const dir = localDataDir();
   return {
-    panaderias: path.join(dir, "panaderias.json"),
-    releasedDir: path.join(dir, "released"),
-    releasedMeta: path.join(dir, "released", "meta.json"),
+    panaderias: path.join(LOCAL_DATA_DIR, "panaderias.json"),
+    releasedDir: path.join(LOCAL_DATA_DIR, "released"),
+    releasedMeta: path.join(LOCAL_DATA_DIR, "released", "meta.json"),
   };
 }
 
-function blobToken() {
-  return getBlobReadWriteToken();
+async function streamToText(stream: ReadableStream<Uint8Array>): Promise<string> {
+  return await new Response(stream).text();
 }
 
-function useBlobStorage() {
-  return Boolean(blobToken());
+async function streamToBuffer(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
+  return Buffer.from(await new Response(stream).arrayBuffer());
 }
 
-async function blobFetch(pathname: string): Promise<Response | null> {
-  const token = blobToken();
-  if (!token) return null;
+async function blobReadStream(pathname: string): Promise<ReadableStream<Uint8Array> | null> {
   try {
-    const meta = await head(pathname, { token });
-    const res = await fetch(meta.url, {
-      headers: { Authorization: `Bearer ${token}` },
+    const result = await get(pathname, {
+      access: "private",
+      ...blobCmdOptions(),
     });
-    return res.ok ? res : null;
+    if (!result || result.statusCode !== 200 || !result.stream) return null;
+    return result.stream;
   } catch {
     return null;
   }
 }
 
 async function blobReadText(pathname: string): Promise<string | null> {
-  const res = await blobFetch(pathname);
-  if (!res) return null;
-  return await res.text();
+  const stream = await blobReadStream(pathname);
+  if (!stream) return null;
+  return streamToText(stream);
 }
 
 async function blobReadBytes(pathname: string): Promise<Buffer | null> {
-  const res = await blobFetch(pathname);
-  if (!res) return null;
-  return Buffer.from(await res.arrayBuffer());
+  const stream = await blobReadStream(pathname);
+  if (!stream) return null;
+  return streamToBuffer(stream);
 }
 
 async function blobWrite(pathname: string, body: string | Buffer | Uint8Array) {
-  const token = blobToken()!;
   await put(pathname, body, {
     access: "private",
-    token,
+    ...blobCmdOptions(),
     addRandomSuffix: false,
     allowOverwrite: true,
   });
+}
+
+function blobPersistenceError(cause: unknown): Error {
+  const msg =
+    process.env.VERCEL
+      ? "No se pudieron guardar los datos en Vercel. Ve a Storage → Blob → Connect to Project (este proyecto), activa Production y haz Redeploy."
+      : "No se pudo usar almacenamiento Blob.";
+  const err = new Error(msg);
+  if (cause instanceof Error) err.cause = cause;
+  return err;
 }
 
 async function ensureDir(dir: string) {
@@ -91,7 +93,7 @@ async function ensureDir(dir: string) {
 }
 
 export async function loadPanaderias(): Promise<PanaderiasStore | null> {
-  if (useBlobStorage()) {
+  if (shouldPersistWithBlob()) {
     const raw = await blobReadText(BLOB_PANADERIAS);
     if (!raw) return null;
     return JSON.parse(raw) as PanaderiasStore;
@@ -114,10 +116,16 @@ export async function savePanaderias(
     rows: rows.map((r, i) => ({ ...r, id: i + 1 })),
   };
   const json = JSON.stringify(store);
-  if (useBlobStorage()) {
-    await blobWrite(BLOB_PANADERIAS, json);
-    return store;
+
+  if (shouldPersistWithBlob()) {
+    try {
+      await blobWrite(BLOB_PANADERIAS, json);
+      return store;
+    } catch (e) {
+      throw blobPersistenceError(e);
+    }
   }
+
   const paths = localPaths();
   await ensureDir(path.dirname(paths.panaderias));
   await fs.writeFile(paths.panaderias, json, "utf-8");
@@ -125,7 +133,7 @@ export async function savePanaderias(
 }
 
 export async function loadReleasedMeta(): Promise<ReleasedMeta | null> {
-  if (useBlobStorage()) {
+  if (shouldPersistWithBlob()) {
     const raw = await blobReadText(BLOB_RELEASED_META);
     if (!raw) return null;
     return JSON.parse(raw) as ReleasedMeta;
@@ -149,11 +157,17 @@ export async function saveReleasedFile(
     size_bytes: bytes.byteLength,
     uploaded_at: new Date().toISOString(),
   };
-  if (useBlobStorage()) {
-    await blobWrite(`data/released/${storageName}`, Buffer.from(bytes));
-    await blobWrite(BLOB_RELEASED_META, JSON.stringify(meta));
-    return meta;
+
+  if (shouldPersistWithBlob()) {
+    try {
+      await blobWrite(`data/released/${storageName}`, Buffer.from(bytes));
+      await blobWrite(BLOB_RELEASED_META, JSON.stringify(meta));
+      return meta;
+    } catch (e) {
+      throw blobPersistenceError(e);
+    }
   }
+
   const paths = localPaths();
   await ensureDir(paths.releasedDir);
   await fs.writeFile(path.join(paths.releasedDir, storageName), bytes);
@@ -164,7 +178,7 @@ export async function saveReleasedFile(
 export async function readReleasedFile(): Promise<{ meta: ReleasedMeta; bytes: Buffer } | null> {
   const meta = await loadReleasedMeta();
   if (!meta) return null;
-  if (useBlobStorage()) {
+  if (shouldPersistWithBlob()) {
     const bytes = await blobReadBytes(`data/released/${meta.storageName}`);
     if (!bytes) return null;
     return { meta, bytes };
