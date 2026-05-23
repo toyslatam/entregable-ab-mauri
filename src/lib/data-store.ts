@@ -1,7 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { get, put } from "@vercel/blob";
-import { blobCmdOptions, shouldPersistWithBlob } from "@/lib/blob-env";
+import {
+  assertBlobReadyForSave,
+  blobCmdOptions,
+  formatBlobSaveError,
+  shouldPersistWithBlob,
+} from "@/lib/blob-env";
 
 export type PanaderiaRow = {
   id: number;
@@ -70,8 +75,11 @@ async function blobReadBytes(pathname: string): Promise<Buffer | null> {
 }
 
 async function blobWrite(pathname: string, body: string | Buffer | Uint8Array) {
+  assertBlobReadyForSave();
   await put(pathname, body, {
     access: "private",
+    contentType:
+      typeof body === "string" ? "application/json; charset=utf-8" : "application/octet-stream",
     ...blobCmdOptions(),
     addRandomSuffix: false,
     allowOverwrite: true,
@@ -79,11 +87,7 @@ async function blobWrite(pathname: string, body: string | Buffer | Uint8Array) {
 }
 
 function blobPersistenceError(cause: unknown): Error {
-  const msg =
-    process.env.VERCEL
-      ? "No se pudieron guardar los datos en Vercel. Ve a Storage → Blob → Connect to Project (este proyecto), activa Production y haz Redeploy."
-      : "No se pudo usar almacenamiento Blob.";
-  const err = new Error(msg);
+  const err = new Error(formatBlobSaveError(cause));
   if (cause instanceof Error) err.cause = cause;
   return err;
 }

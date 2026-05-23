@@ -72,10 +72,13 @@ export const adminLogout = createServerFn({ method: "POST" }).handler(async () =
 export const blobStorageStatus = createServerFn({ method: "GET" }).handler(async () => {
   assertAdminSession();
   const token = getBlobReadWriteToken();
+  const storeId = process.env.BLOB_STORE_ID?.trim();
   return {
     configured: blobStorageConfigured(),
     onVercel: Boolean(process.env.VERCEL),
     vercelEnv: process.env.VERCEL_ENV ?? null,
+    hasReadWriteToken: Boolean(token),
+    hasBlobStoreId: Boolean(storeId),
     tokenLength: token?.length ?? 0,
   };
 });

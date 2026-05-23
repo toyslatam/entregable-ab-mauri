@@ -136,6 +136,14 @@ export function AdminPanel({ onLogout }: Props) {
 
   return (
     <div className="space-y-6">
+      {blobAvailable === false && (
+        <p className="text-sm rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2">
+          Blob no detectado en este deploy. Storage → Blob → <strong>Connect to Project</strong> →
+          Production → <strong>Redeploy</strong>. Si pegaste el token a mano, bórralo y deja que
+          Vercel lo cree al conectar.
+        </p>
+      )}
+
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold tracking-tight">Panel de administración</h2>
         <button
