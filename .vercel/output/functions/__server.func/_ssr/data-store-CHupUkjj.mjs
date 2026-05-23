@@ -1,105 +1,71 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { head, put } from "@vercel/blob";
-
-export type PanaderiaRow = {
-  id: number;
-  nombre: string | null;
-  foto_url: string | null;
-  data: Record<string, unknown>;
-};
-
-export type PanaderiasStore = {
-  uploadedAt: string;
-  sourceFilename: string | null;
-  rows: PanaderiaRow[];
-};
-
-export type ReleasedMeta = {
-  filename: string;
-  storageName: string;
-  size_bytes: number;
-  uploaded_at: string;
-};
-
+import { h as head, p as put } from "../_libs/vercel__blob.mjs";
 const BLOB_PANADERIAS = "data/panaderias.json";
 const BLOB_RELEASED_META = "data/released/meta.json";
-
 const DATA_DIR = path.join(process.cwd(), "data");
 const PANADERIAS_JSON = path.join(DATA_DIR, "panaderias.json");
 const RELEASED_DIR = path.join(DATA_DIR, "released");
 const RELEASED_META = path.join(RELEASED_DIR, "meta.json");
-
 function blobToken() {
   return process.env.BLOB_READ_WRITE_TOKEN;
 }
-
 function useBlobStorage() {
   return Boolean(blobToken());
 }
-
-async function blobFetch(pathname: string): Promise<Response | null> {
+async function blobFetch(pathname) {
   const token = blobToken();
   if (!token) return null;
   try {
     const meta = await head(pathname, { token });
     const res = await fetch(meta.url, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}` }
     });
     return res.ok ? res : null;
   } catch {
     return null;
   }
 }
-
-async function blobReadText(pathname: string): Promise<string | null> {
+async function blobReadText(pathname) {
   const res = await blobFetch(pathname);
   if (!res) return null;
   return await res.text();
 }
-
-async function blobReadBytes(pathname: string): Promise<Buffer | null> {
+async function blobReadBytes(pathname) {
   const res = await blobFetch(pathname);
   if (!res) return null;
   return Buffer.from(await res.arrayBuffer());
 }
-
-async function blobWrite(pathname: string, body: string | Buffer | Uint8Array) {
-  const token = blobToken()!;
+async function blobWrite(pathname, body) {
+  const token = blobToken();
   await put(pathname, body, {
     access: "private",
     token,
     addRandomSuffix: false,
-    allowOverwrite: true,
+    allowOverwrite: true
   });
 }
-
-async function ensureDir(dir: string) {
+async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
 }
-
-export async function loadPanaderias(): Promise<PanaderiasStore | null> {
+async function loadPanaderias() {
   if (useBlobStorage()) {
     const raw = await blobReadText(BLOB_PANADERIAS);
     if (!raw) return null;
-    return JSON.parse(raw) as PanaderiasStore;
+    return JSON.parse(raw);
   }
   try {
     const raw = await fs.readFile(PANADERIAS_JSON, "utf-8");
-    return JSON.parse(raw) as PanaderiasStore;
+    return JSON.parse(raw);
   } catch {
     return null;
   }
 }
-
-export async function savePanaderias(
-  rows: Omit<PanaderiaRow, "id">[],
-  sourceFilename: string | null = null,
-): Promise<PanaderiasStore> {
-  const store: PanaderiasStore = {
-    uploadedAt: new Date().toISOString(),
+async function savePanaderias(rows, sourceFilename = null) {
+  const store = {
+    uploadedAt: (/* @__PURE__ */ new Date()).toISOString(),
     sourceFilename,
-    rows: rows.map((r, i) => ({ ...r, id: i + 1 })),
+    rows: rows.map((r, i) => ({ ...r, id: i + 1 }))
   };
   const json = JSON.stringify(store);
   if (useBlobStorage()) {
@@ -110,31 +76,26 @@ export async function savePanaderias(
   await fs.writeFile(PANADERIAS_JSON, json, "utf-8");
   return store;
 }
-
-export async function loadReleasedMeta(): Promise<ReleasedMeta | null> {
+async function loadReleasedMeta() {
   if (useBlobStorage()) {
     const raw = await blobReadText(BLOB_RELEASED_META);
     if (!raw) return null;
-    return JSON.parse(raw) as ReleasedMeta;
+    return JSON.parse(raw);
   }
   try {
     const raw = await fs.readFile(RELEASED_META, "utf-8");
-    return JSON.parse(raw) as ReleasedMeta;
+    return JSON.parse(raw);
   } catch {
     return null;
   }
 }
-
-export async function saveReleasedFile(
-  filename: string,
-  bytes: Uint8Array,
-): Promise<ReleasedMeta> {
+async function saveReleasedFile(filename, bytes) {
   const storageName = `current${path.extname(filename) || ".bin"}`;
-  const meta: ReleasedMeta = {
+  const meta = {
     filename,
     storageName,
     size_bytes: bytes.byteLength,
-    uploaded_at: new Date().toISOString(),
+    uploaded_at: (/* @__PURE__ */ new Date()).toISOString()
   };
   if (useBlobStorage()) {
     await blobWrite(`data/released/${storageName}`, Buffer.from(bytes));
@@ -146,8 +107,7 @@ export async function saveReleasedFile(
   await fs.writeFile(RELEASED_META, JSON.stringify(meta), "utf-8");
   return meta;
 }
-
-export async function readReleasedFile(): Promise<{ meta: ReleasedMeta; bytes: Buffer } | null> {
+async function readReleasedFile() {
   const meta = await loadReleasedMeta();
   if (!meta) return null;
   if (useBlobStorage()) {
@@ -162,3 +122,10 @@ export async function readReleasedFile(): Promise<{ meta: ReleasedMeta; bytes: B
     return null;
   }
 }
+export {
+  loadReleasedMeta as a,
+  saveReleasedFile as b,
+  loadPanaderias as l,
+  readReleasedFile as r,
+  savePanaderias as s
+};
