@@ -46,7 +46,59 @@ export const adminLogout = createServerFn({ method: "POST" }).handler(async () =
   return { ok: true };
 });
 
-/** Sube el .xlsx y parsea en el servidor (evita JSON enorme en el request) */
+/** Procesa un Excel ya subido a Vercel Blob (request pequeño, sin límite 4.5MB) */
+export const processPanaderiasFromBlob = createServerFn({ method: "POST" })
+  .inputValidator((d) =>
+    z
+      .object({
+        blobUrl: z.string().url(),
+        sourceFilename: z.string().min(1).max(255),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    assertAdminSession();
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) throw new Error("BLOB_READ_WRITE_TOKEN no configurado en Vercel");
+    const res = await fetch(data.blobUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("No se pudo leer el archivo subido");
+    const buffer = await res.arrayBuffer();
+    const { sheetName, rows } = parsePanaderiasWorkbook(buffer);
+    if (!rows.length) throw new Error(`No se encontraron filas en "${sheetName}"`);
+    const store = await savePanaderias(rows, data.sourceFilename);
+    return {
+      ok: true,
+      inserted: store.rows.length,
+      uploadedAt: store.uploadedAt,
+      sheetName,
+    };
+  });
+
+export const processReleasedFromBlob = createServerFn({ method: "POST" })
+  .inputValidator((d) =>
+    z
+      .object({
+        blobUrl: z.string().url(),
+        sourceFilename: z.string().min(1).max(255),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    assertAdminSession();
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) throw new Error("BLOB_READ_WRITE_TOKEN no configurado en Vercel");
+    const res = await fetch(data.blobUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("No se pudo leer el archivo subido");
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    await saveReleasedFile(data.sourceFilename, bytes);
+    return { ok: true };
+  });
+
+/** Respaldo local: sube el .xlsx en el body (límite ~4.5 MB en Vercel) */
 export const uploadPanaderiasExcel = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z

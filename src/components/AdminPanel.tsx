@@ -1,15 +1,29 @@
 import { useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { uploadPanaderiasExcel, uploadReleasedFile } from "@/lib/admin.functions";
+import {
+  processPanaderiasFromBlob,
+  processReleasedFromBlob,
+  uploadPanaderiasExcel,
+  uploadReleasedFile,
+} from "@/lib/admin.functions";
 import { arrayBufferToBase64, MAX_UPLOAD_BYTES } from "@/lib/file-base64";
 
 type Props = { onLogout: () => void | Promise<void> };
 
+const BLOB_UPLOAD_URL = "/api/blob-upload";
+
+function safePath(name: string) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
 export function AdminPanel({ onLogout }: Props) {
   const qc = useQueryClient();
-  const uploadExcel = useServerFn(uploadPanaderiasExcel);
-  const uploadFile = useServerFn(uploadReleasedFile);
+  const uploadExcelLegacy = useServerFn(uploadPanaderiasExcel);
+  const processExcel = useServerFn(processPanaderiasFromBlob);
+  const uploadFileLegacy = useServerFn(uploadReleasedFile);
+  const processReleased = useServerFn(processReleasedFromBlob);
 
   const [parsing, setParsing] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
@@ -18,27 +32,49 @@ export function AdminPanel({ onLogout }: Props) {
   const [releaseMsg, setReleaseMsg] = useState<string | null>(null);
   const [releaseErr, setReleaseErr] = useState<string | null>(null);
 
+  async function uploadPanaderiasViaBlob(file: File) {
+    setUploadMsg("Subiendo archivo a almacenamiento…");
+    const pathname = `uploads/panaderias/${Date.now()}-${safePath(file.name)}`;
+    const blob = await upload(pathname, file, {
+      access: "private",
+      handleUploadUrl: BLOB_UPLOAD_URL,
+      multipart: file.size > 4 * 1024 * 1024,
+    });
+    setUploadMsg("Procesando Excel en el servidor…");
+    return processExcel({
+      data: { blobUrl: blob.url, sourceFilename: file.name },
+    });
+  }
+
+  async function uploadPanaderiasViaBase64(file: File) {
+    const buf = await file.arrayBuffer();
+    setUploadMsg("Subiendo Excel al servidor…");
+    return uploadExcelLegacy({
+      data: {
+        contentBase64: arrayBufferToBase64(buf),
+        sourceFilename: file.name,
+      },
+    });
+  }
+
   async function handlePanaderiasFile(file: File) {
     setUploadErr(null);
     setUploadMsg(null);
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setUploadErr(
-        `El archivo es muy grande (${(file.size / 1024 / 1024).toFixed(1)} MB). Máximo ~4 MB en Vercel.`,
-      );
-      return;
-    }
     setParsing(true);
     try {
-      const buf = await file.arrayBuffer();
-      setUploadMsg("Subiendo Excel al servidor…");
-      const res = await uploadExcel({
-        data: {
-          contentBase64: arrayBufferToBase64(buf),
-          sourceFilename: file.name,
-        },
-      });
+      let res: { inserted: number; sheetName: string };
+      if (import.meta.env.PROD) {
+        res = await uploadPanaderiasViaBlob(file);
+      } else {
+        try {
+          res = await uploadPanaderiasViaBlob(file);
+        } catch {
+          if (file.size > MAX_UPLOAD_BYTES) throw new Error("Archivo demasiado grande");
+          res = await uploadPanaderiasViaBase64(file);
+        }
+      }
       setUploadMsg(
-        `✓ ${res.inserted} registros cargados (hoja "${res.sheetName}"). Puedes volver a subir cuando quieras.`,
+        `✓ ${res.inserted} registros cargados (hoja "${res.sheetName}"). Cada nueva carga reemplaza la anterior.`,
       );
       qc.invalidateQueries({ queryKey: ["pan-page"] });
       qc.invalidateQueries({ queryKey: ["pan-ciudades"] });
@@ -46,7 +82,7 @@ export function AdminPanel({ onLogout }: Props) {
       const msg = (e as Error).message;
       setUploadErr(
         msg.includes("Too Large") || msg.includes("413")
-          ? "Archivo demasiado grande para el servidor. Usa un Excel más pequeño o comprime datos."
+          ? "El archivo supera el límite del servidor. Conecta Vercel Blob y redespliega, o reduce el tamaño del Excel."
           : msg,
       );
       setUploadMsg(null);
@@ -58,15 +94,25 @@ export function AdminPanel({ onLogout }: Props) {
   async function handleReleasedFile(file: File) {
     setReleaseErr(null);
     setReleaseMsg(null);
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setReleaseErr(`Archivo demasiado grande. Máximo ~4 MB.`);
-      return;
-    }
     try {
-      const buf = await file.arrayBuffer();
-      await uploadFile({
-        data: { filename: file.name, contentBase64: arrayBufferToBase64(buf) },
-      });
+      if (import.meta.env.PROD) {
+        const pathname = `uploads/released/${Date.now()}-${safePath(file.name)}`;
+        const blob = await upload(pathname, file, {
+          access: "private",
+          handleUploadUrl: BLOB_UPLOAD_URL,
+          multipart: file.size > 4 * 1024 * 1024,
+        });
+        await processReleased({
+          data: { blobUrl: blob.url, sourceFilename: file.name },
+        });
+      } else if (file.size > MAX_UPLOAD_BYTES) {
+        setReleaseErr("Archivo demasiado grande para modo local.");
+      } else {
+        const buf = await file.arrayBuffer();
+        await uploadFileLegacy({
+          data: { filename: file.name, contentBase64: arrayBufferToBase64(buf) },
+        });
+      }
       setReleaseMsg("✓ Archivo liberado disponible para descarga.");
       qc.invalidateQueries({ queryKey: ["released"] });
     } catch (e) {
@@ -90,12 +136,13 @@ export function AdminPanel({ onLogout }: Props) {
         <div>
           <h3 className="font-semibold">1. Datos de panaderías</h3>
           <p className="text-sm text-muted-foreground">
-            Sube un Excel con el mismo formato que{" "}
+            Sube un Excel como{" "}
             <a href="/ejemplo.xlsx" className="text-primary underline" download>
               ejemplo.xlsx
             </a>{" "}
-            (hoja <code className="px-1 rounded bg-muted">Hoja1</code>). Cada carga reemplaza los
-            datos anteriores. Tamaño máximo recomendado: 4 MB.
+            (hoja <code className="px-1 rounded bg-muted">Hoja1</code>). Cada carga{" "}
+            <strong>reemplaza</strong> la anterior. En Vercel el archivo se sube directo al
+            almacenamiento (hasta ~20 MB).
           </p>
         </div>
         <input
@@ -118,7 +165,7 @@ export function AdminPanel({ onLogout }: Props) {
         <div>
           <h3 className="font-semibold">2. Datos liberados (descargables)</h3>
           <p className="text-sm text-muted-foreground">
-            Archivo opcional para la sección &quot;Datos liberados&quot; (Excel, CSV o PDF).
+            Archivo opcional para &quot;Datos liberados&quot; (Excel, CSV o PDF).
           </p>
         </div>
         <input
