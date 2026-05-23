@@ -5,7 +5,15 @@ export function useContentProtection(enabled = true) {
   useEffect(() => {
     if (!enabled || typeof document === "undefined") return;
 
-    const block = (e: Event) => e.preventDefault();
+    const isFormControl = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return Boolean(target.closest("input, select, textarea, button, .allow-interaction"));
+    };
+
+    const block = (e: Event) => {
+      if (isFormControl(e.target)) return;
+      e.preventDefault();
+    };
 
     const onKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();

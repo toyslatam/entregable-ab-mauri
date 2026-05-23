@@ -6,7 +6,7 @@ import {
   loadReleasedMeta,
   saveReleasedFile,
 } from "@/lib/data-store";
-import { CIUDAD_COLUMN, UNIQUE_ID_COLUMN } from "@/lib/columns";
+import { getCiudadFromRow, UNIQUE_ID_COLUMN } from "@/lib/columns";
 import type { PanaderiaRow } from "@/lib/data-store";
 import {
   disorderSortKey,
@@ -226,10 +226,7 @@ export const getPanaderiasPage = createServerFn({ method: "GET" })
     const ciudadQ = data.ciudad?.trim();
     if (ciudadQ) {
       const c = ciudadQ.toLowerCase();
-      filtered = filtered.filter((r) => {
-        const city = String((r.data as Record<string, unknown>)?.[CIUDAD_COLUMN] ?? "").toLowerCase();
-        return city === c;
-      });
+      filtered = filtered.filter((r) => getCiudadFromRow(r.data as Record<string, unknown>).toLowerCase() === c);
     }
 
     filtered = [...filtered].sort((a, b) =>
@@ -248,10 +245,12 @@ export const getPanaderiasCiudades = createServerFn({ method: "GET" }).handler(a
   const store = await loadPanaderias();
   const cities = new Set<string>();
   for (const r of store?.rows ?? []) {
-    const raw = (r.data as Record<string, unknown>)?.[CIUDAD_COLUMN];
-    if (raw != null && String(raw).trim()) cities.add(String(raw).trim());
+    const city = getCiudadFromRow(r.data as Record<string, unknown>);
+    if (city) cities.add(city);
   }
+  const ciudades = [...cities].sort((a, b) => a.localeCompare(b, "es"));
   return {
-    ciudades: [...cities].sort((a, b) => a.localeCompare(b, "es")),
+    ciudades,
+    showCiudadFilter: ciudades.length > 0,
   };
 });

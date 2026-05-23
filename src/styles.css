@@ -62,6 +62,13 @@
     pointer-events: none;
     -webkit-user-drag: none;
   }
+  /* Filtros y formularios deben poder usarse aunque la tabla esté protegida */
+  .no-copy .allow-interaction,
+  .no-copy .allow-interaction * {
+    user-select: auto !important;
+    -webkit-user-select: auto !important;
+    -webkit-touch-callout: default !important;
+  }
   .protected-view {
     -webkit-user-select: none;
   }

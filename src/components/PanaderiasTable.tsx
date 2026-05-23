@@ -28,6 +28,11 @@ export function PanaderiasTable() {
     queryFn: () => fetchCiudades(),
   });
 
+  const showCiudadFilter = ciudadesQ.data?.showCiudadFilter === true;
+  useEffect(() => {
+    if (!showCiudadFilter) setCiudad("");
+  }, [showCiudadFilter]);
+
   const q = useQuery({
     queryKey: ["pan-page", page, debouncedId, ciudad],
     queryFn: () =>
@@ -50,7 +55,7 @@ export function PanaderiasTable() {
     <div className="no-copy">
       <div className="flex flex-wrap items-end justify-between gap-4 mb-4">
         <h2 className="text-2xl font-semibold tracking-tight">ENTREGABLE AB MAURI</h2>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="allow-interaction flex flex-wrap items-center gap-3">
           <input
             type="search"
             placeholder="Buscar por ID…"
@@ -58,18 +63,21 @@ export function PanaderiasTable() {
             onChange={(e) => setSearchId(e.target.value)}
             className="px-3 py-2 rounded-md border bg-card w-56 text-sm"
           />
-          <select
-            value={ciudad}
-            onChange={(e) => setCiudad(e.target.value)}
-            className="px-3 py-2 rounded-md border bg-card text-sm min-w-[180px]"
-          >
-            <option value="">Todas las ciudades</option>
-            {ciudades.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          {showCiudadFilter && (
+            <select
+              value={ciudad}
+              onChange={(e) => setCiudad(e.target.value)}
+              className="px-3 py-2 rounded-md border bg-card text-sm min-w-[180px]"
+              aria-label="Filtrar por ciudad"
+            >
+              <option value="">Todas las ciudades</option>
+              {ciudades.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 

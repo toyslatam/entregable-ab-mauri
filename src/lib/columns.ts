@@ -89,6 +89,12 @@ const EXCEL_HEADERS = [
 
 export const UNIQUE_ID_COLUMN = "Unique ID";
 export const CIUDAD_COLUMN = "Ciudad";
+
+export function getCiudadFromRow(row: Record<string, unknown>): string {
+  const v = row[CIUDAD_COLUMN];
+  if (v != null && String(v).trim()) return String(v).trim();
+  return "";
+}
 export const NAME_COLUMN = "Nombre del establecimiento de comercio";
 export const PHOTO_COLUMN = "Foto de la fachada";
 

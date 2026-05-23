@@ -136,13 +136,6 @@ export function AdminPanel({ onLogout }: Props) {
 
   return (
     <div className="space-y-6">
-      {blobAvailable === false && (
-        <p className="text-sm rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-100">
-          En Vercel los datos deben guardarse en Blob para verse en la tabla. Storage → Blob →{" "}
-          <strong>Connect to Project</strong>, activa Production, guarda y haz <strong>Redeploy</strong>.
-        </p>
-      )}
-
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold tracking-tight">Panel de administración</h2>
         <button
