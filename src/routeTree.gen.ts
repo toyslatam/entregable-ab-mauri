@@ -13,7 +13,6 @@ import { Route as DatosLiberadosRouteImport } from './routes/datos-liberados'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiReleasedDownloadRouteImport } from './routes/api.released-download'
-import { Route as ApiBlobUploadRouteImport } from './routes/api.blob-upload'
 
 const DatosLiberadosRoute = DatosLiberadosRouteImport.update({
   id: '/datos-liberados',
@@ -35,24 +34,17 @@ const ApiReleasedDownloadRoute = ApiReleasedDownloadRouteImport.update({
   path: '/api/released-download',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiBlobUploadRoute = ApiBlobUploadRouteImport.update({
-  id: '/api/blob-upload',
-  path: '/api/blob-upload',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/datos-liberados': typeof DatosLiberadosRoute
-  '/api/blob-upload': typeof ApiBlobUploadRoute
   '/api/released-download': typeof ApiReleasedDownloadRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/datos-liberados': typeof DatosLiberadosRoute
-  '/api/blob-upload': typeof ApiBlobUploadRoute
   '/api/released-download': typeof ApiReleasedDownloadRoute
 }
 export interface FileRoutesById {
@@ -60,30 +52,18 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/datos-liberados': typeof DatosLiberadosRoute
-  '/api/blob-upload': typeof ApiBlobUploadRoute
   '/api/released-download': typeof ApiReleasedDownloadRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/admin'
-    | '/datos-liberados'
-    | '/api/blob-upload'
-    | '/api/released-download'
+  fullPaths: '/' | '/admin' | '/datos-liberados' | '/api/released-download'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/admin'
-    | '/datos-liberados'
-    | '/api/blob-upload'
-    | '/api/released-download'
+  to: '/' | '/admin' | '/datos-liberados' | '/api/released-download'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/datos-liberados'
-    | '/api/blob-upload'
     | '/api/released-download'
   fileRoutesById: FileRoutesById
 }
@@ -91,7 +71,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   DatosLiberadosRoute: typeof DatosLiberadosRoute
-  ApiBlobUploadRoute: typeof ApiBlobUploadRoute
   ApiReleasedDownloadRoute: typeof ApiReleasedDownloadRoute
 }
 
@@ -125,13 +104,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiReleasedDownloadRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/blob-upload': {
-      id: '/api/blob-upload'
-      path: '/api/blob-upload'
-      fullPath: '/api/blob-upload'
-      preLoaderRoute: typeof ApiBlobUploadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -139,7 +111,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   DatosLiberadosRoute: DatosLiberadosRoute,
-  ApiBlobUploadRoute: ApiBlobUploadRoute,
   ApiReleasedDownloadRoute: ApiReleasedDownloadRoute,
 }
 export const routeTree = rootRouteImport

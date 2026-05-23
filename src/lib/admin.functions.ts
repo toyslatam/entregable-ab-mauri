@@ -22,6 +22,7 @@ import {
   setAdminSessionCookie,
 } from "@/lib/admin-session";
 import { parsePanaderiasWorkbook } from "@/lib/excel-import";
+import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 
 function sanitizeRowForPublic(row: PanaderiaRow): PanaderiaRow {
   const data = { ...(row.data as Record<string, unknown>) };
@@ -45,6 +46,37 @@ export const adminLogout = createServerFn({ method: "POST" }).handler(async () =
   clearAdminSessionCookie();
   return { ok: true };
 });
+
+const BLOB_CONTENT_TYPES = [
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "text/csv",
+  "application/pdf",
+];
+
+/** Token para subir desde el navegador a Blob (usa la cookie de sesión admin) */
+export const getBlobClientToken = createServerFn({ method: "POST" })
+  .inputValidator((d) =>
+    z.object({ pathname: z.string().min(1).max(500) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    assertAdminSession();
+    const rw = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!rw) {
+      throw new Error(
+        "Falta BLOB_READ_WRITE_TOKEN. En Vercel: Storage → Blob → conectar al proyecto.",
+      );
+    }
+    const clientToken = await generateClientTokenFromReadWriteToken({
+      pathname: data.pathname,
+      access: "private",
+      token: rw,
+      maximumSizeInBytes: 20 * 1024 * 1024,
+      allowedContentTypes: BLOB_CONTENT_TYPES,
+      addRandomSuffix: true,
+    });
+    return { clientToken };
+  });
 
 /** Procesa un Excel ya subido a Vercel Blob (request pequeño, sin límite 4.5MB) */
 export const processPanaderiasFromBlob = createServerFn({ method: "POST" })
