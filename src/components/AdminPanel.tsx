@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { uploadPanaderias, uploadReleasedFile } from "@/lib/admin.functions";
-import { parsePanaderiasWorkbook } from "@/lib/excel-import";
+import { uploadPanaderiasExcel, uploadReleasedFile } from "@/lib/admin.functions";
+import { arrayBufferToBase64, MAX_UPLOAD_BYTES } from "@/lib/file-base64";
 
 type Props = { onLogout: () => void | Promise<void> };
 
 export function AdminPanel({ onLogout }: Props) {
   const qc = useQueryClient();
-  const uploadRows = useServerFn(uploadPanaderias);
+  const uploadExcel = useServerFn(uploadPanaderiasExcel);
   const uploadFile = useServerFn(uploadReleasedFile);
 
   const [parsing, setParsing] = useState(false);
@@ -21,20 +21,34 @@ export function AdminPanel({ onLogout }: Props) {
   async function handlePanaderiasFile(file: File) {
     setUploadErr(null);
     setUploadMsg(null);
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setUploadErr(
+        `El archivo es muy grande (${(file.size / 1024 / 1024).toFixed(1)} MB). Máximo ~4 MB en Vercel.`,
+      );
+      return;
+    }
     setParsing(true);
     try {
       const buf = await file.arrayBuffer();
-      const { sheetName, rows } = parsePanaderiasWorkbook(buf);
-
-      setUploadMsg(`Procesando ${rows.length} filas de "${sheetName}"…`);
-      const res = await uploadRows({
-        data: { rows, sourceFilename: file.name },
+      setUploadMsg("Subiendo Excel al servidor…");
+      const res = await uploadExcel({
+        data: {
+          contentBase64: arrayBufferToBase64(buf),
+          sourceFilename: file.name,
+        },
       });
-      setUploadMsg(`✓ ${res.inserted} registros cargados. Puedes volver a subir otro archivo cuando quieras.`);
+      setUploadMsg(
+        `✓ ${res.inserted} registros cargados (hoja "${res.sheetName}"). Puedes volver a subir cuando quieras.`,
+      );
       qc.invalidateQueries({ queryKey: ["pan-page"] });
       qc.invalidateQueries({ queryKey: ["pan-ciudades"] });
     } catch (e) {
-      setUploadErr((e as Error).message);
+      const msg = (e as Error).message;
+      setUploadErr(
+        msg.includes("Too Large") || msg.includes("413")
+          ? "Archivo demasiado grande para el servidor. Usa un Excel más pequeño o comprime datos."
+          : msg,
+      );
       setUploadMsg(null);
     } finally {
       setParsing(false);
@@ -44,17 +58,14 @@ export function AdminPanel({ onLogout }: Props) {
   async function handleReleasedFile(file: File) {
     setReleaseErr(null);
     setReleaseMsg(null);
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setReleaseErr(`Archivo demasiado grande. Máximo ~4 MB.`);
+      return;
+    }
     try {
       const buf = await file.arrayBuffer();
-      let bin = "";
-      const bytes = new Uint8Array(buf);
-      const chunk = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunk) {
-        bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
-      }
-      const b64 = btoa(bin);
       await uploadFile({
-        data: { filename: file.name, contentBase64: b64 },
+        data: { filename: file.name, contentBase64: arrayBufferToBase64(buf) },
       });
       setReleaseMsg("✓ Archivo liberado disponible para descarga.");
       qc.invalidateQueries({ queryKey: ["released"] });
@@ -83,8 +94,8 @@ export function AdminPanel({ onLogout }: Props) {
             <a href="/ejemplo.xlsx" className="text-primary underline" download>
               ejemplo.xlsx
             </a>{" "}
-            (hoja <code className="px-1 rounded bg-muted">Hoja1</code>, mismas columnas). Cada carga
-            reemplaza los datos anteriores en la tabla pública.
+            (hoja <code className="px-1 rounded bg-muted">Hoja1</code>). Cada carga reemplaza los
+            datos anteriores. Tamaño máximo recomendado: 4 MB.
           </p>
         </div>
         <input

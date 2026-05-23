@@ -21,6 +21,7 @@ import {
   hasAdminSession,
   setAdminSessionCookie,
 } from "@/lib/admin-session";
+import { parsePanaderiasWorkbook } from "@/lib/excel-import";
 
 function sanitizeRowForPublic(row: PanaderiaRow): PanaderiaRow {
   const data = { ...(row.data as Record<string, unknown>) };
@@ -45,25 +46,29 @@ export const adminLogout = createServerFn({ method: "POST" }).handler(async () =
   return { ok: true };
 });
 
-const RowSchema = z.object({
-  nombre: z.string().nullable(),
-  foto_url: z.string().nullable(),
-  data: z.record(z.string(), z.unknown()),
-});
-
-export const uploadPanaderias = createServerFn({ method: "POST" })
+/** Sube el .xlsx y parsea en el servidor (evita JSON enorme en el request) */
+export const uploadPanaderiasExcel = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z
       .object({
-        rows: z.array(RowSchema).min(1).max(50000),
-        sourceFilename: z.string().max(255).optional(),
+        contentBase64: z.string().min(1).max(6_500_000),
+        sourceFilename: z.string().min(1).max(255),
       })
       .parse(d),
   )
   .handler(async ({ data }) => {
     assertAdminSession();
-    const store = await savePanaderias(data.rows, data.sourceFilename ?? null);
-    return { ok: true, inserted: store.rows.length, uploadedAt: store.uploadedAt };
+    const bytes = Uint8Array.from(atob(data.contentBase64), (c) => c.charCodeAt(0));
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const { sheetName, rows } = parsePanaderiasWorkbook(buffer);
+    if (!rows.length) throw new Error(`No se encontraron filas en "${sheetName}"`);
+    const store = await savePanaderias(rows, data.sourceFilename);
+    return {
+      ok: true,
+      inserted: store.rows.length,
+      uploadedAt: store.uploadedAt,
+      sheetName,
+    };
   });
 
 export const uploadReleasedFile = createServerFn({ method: "POST" })
