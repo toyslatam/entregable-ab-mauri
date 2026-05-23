@@ -43,6 +43,9 @@ export default defineConfig(({ mode }) => {
       nitro({
         preset: "vercel",
         vercel: { entryFormat: "node" },
+        routeRules: {
+          "/**": { maxDuration: 60 },
+        },
       }),
       viteReact(),
     ],
