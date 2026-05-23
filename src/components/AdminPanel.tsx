@@ -4,9 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { uploadPanaderias, uploadReleasedFile } from "@/lib/admin.functions";
 import { parsePanaderiasWorkbook } from "@/lib/excel-import";
 
-type Props = { password: string; onLogout: () => void };
+type Props = { onLogout: () => void | Promise<void> };
 
-export function AdminPanel({ password, onLogout }: Props) {
+export function AdminPanel({ onLogout }: Props) {
   const qc = useQueryClient();
   const uploadRows = useServerFn(uploadPanaderias);
   const uploadFile = useServerFn(uploadReleasedFile);
@@ -28,7 +28,7 @@ export function AdminPanel({ password, onLogout }: Props) {
 
       setUploadMsg(`Procesando ${rows.length} filas de "${sheetName}"…`);
       const res = await uploadRows({
-        data: { password, rows, sourceFilename: file.name },
+        data: { rows, sourceFilename: file.name },
       });
       setUploadMsg(`✓ ${res.inserted} registros cargados. Puedes volver a subir otro archivo cuando quieras.`);
       qc.invalidateQueries({ queryKey: ["pan-page"] });
@@ -54,7 +54,7 @@ export function AdminPanel({ password, onLogout }: Props) {
       }
       const b64 = btoa(bin);
       await uploadFile({
-        data: { password, filename: file.name, contentBase64: b64 },
+        data: { filename: file.name, contentBase64: b64 },
       });
       setReleaseMsg("✓ Archivo liberado disponible para descarga.");
       qc.invalidateQueries({ queryKey: ["released"] });

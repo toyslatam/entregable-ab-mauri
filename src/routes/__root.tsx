@@ -87,9 +87,6 @@ function NavBar() {
           <Link to="/datos-liberados" className="px-3 py-1.5 rounded-md hover:bg-muted [&.active]:bg-muted [&.active]:font-medium">
             Datos liberados
           </Link>
-          <Link to="/admin" className="px-3 py-1.5 rounded-md hover:bg-muted [&.active]:bg-muted [&.active]:font-medium">
-            Admin
-          </Link>
         </nav>
       </div>
     </header>

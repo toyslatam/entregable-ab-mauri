@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { adminLogin } from "@/lib/admin.functions";
+import { useQuery } from "@tanstack/react-query";
+import { adminLogin, adminLogout, adminSession } from "@/lib/admin.functions";
 import { AdminPanel } from "@/components/AdminPanel";
 
 export const Route = createFileRoute("/admin")({
@@ -9,19 +10,19 @@ export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "Administración" }] }),
 });
 
-const STORAGE_KEY = "admin_pwd";
-
 function AdminPage() {
-  const [password, setPassword] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const login = useServerFn(adminLogin);
 
-  useEffect(() => {
-    const stored = typeof window !== "undefined" ? sessionStorage.getItem(STORAGE_KEY) : null;
-    if (stored) setPassword(stored);
-  }, []);
+  const fetchSession = useServerFn(adminSession);
+  const login = useServerFn(adminLogin);
+  const logout = useServerFn(adminLogout);
+
+  const session = useQuery({
+    queryKey: ["admin-session"],
+    queryFn: () => fetchSession(),
+  });
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,9 +30,8 @@ function AdminPage() {
     setLoading(true);
     try {
       await login({ data: { password: input } });
-      sessionStorage.setItem(STORAGE_KEY, input);
-      setPassword(input);
       setInput("");
+      await session.refetch();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -39,24 +39,32 @@ function AdminPage() {
     }
   }
 
-  function logout() {
-    sessionStorage.removeItem(STORAGE_KEY);
-    setPassword(null);
+  async function onLogout() {
+    await logout();
+    await session.refetch();
   }
 
-  if (password) return <AdminPanel password={password} onLogout={logout} />;
+  if (session.isLoading) {
+    return <p className="text-sm text-muted-foreground">Verificando sesión…</p>;
+  }
+
+  if (session.data?.authenticated) {
+    return <AdminPanel onLogout={onLogout} />;
+  }
 
   return (
     <div className="max-w-sm mx-auto">
       <div className="rounded-lg border bg-card p-6">
         <h1 className="text-xl font-semibold tracking-tight">Acceso administrador</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Ingresa la clave para cargar el Excel y los datos liberados.
+          Solo quien conozca la clave puede entrar. La contraseña no se guarda en el navegador;
+          se valida en el servidor.
         </p>
         <form onSubmit={onSubmit} className="mt-5 space-y-3">
           <input
             type="password"
             autoFocus
+            autoComplete="current-password"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Contraseña"

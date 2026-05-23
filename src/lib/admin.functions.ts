@@ -14,6 +14,13 @@ import {
   matchesUniqueIdSearch,
   scrambleUniqueIdDisplay,
 } from "@/lib/id-scramble";
+import {
+  assertAdminSession,
+  checkAdminPassword,
+  clearAdminSessionCookie,
+  hasAdminSession,
+  setAdminSessionCookie,
+} from "@/lib/admin-session";
 
 function sanitizeRowForPublic(row: PanaderiaRow): PanaderiaRow {
   const data = { ...(row.data as Record<string, unknown>) };
@@ -21,18 +28,22 @@ function sanitizeRowForPublic(row: PanaderiaRow): PanaderiaRow {
   return { ...row, data };
 }
 
-function checkPassword(pwd: string) {
-  const expected = process.env.ADMIN_PASSWORD || "";
-  if (!expected) throw new Error("ADMIN_PASSWORD no configurada");
-  if (pwd !== expected) throw new Error("Contraseña incorrecta");
-}
+export const adminSession = createServerFn({ method: "GET" }).handler(async () => ({
+  authenticated: hasAdminSession(),
+}));
 
 export const adminLogin = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ password: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data }) => {
-    checkPassword(data.password);
+    checkAdminPassword(data.password);
+    setAdminSessionCookie();
     return { ok: true };
   });
+
+export const adminLogout = createServerFn({ method: "POST" }).handler(async () => {
+  clearAdminSessionCookie();
+  return { ok: true };
+});
 
 const RowSchema = z.object({
   nombre: z.string().nullable(),
@@ -44,14 +55,13 @@ export const uploadPanaderias = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z
       .object({
-        password: z.string().min(1).max(200),
         rows: z.array(RowSchema).min(1).max(50000),
         sourceFilename: z.string().max(255).optional(),
       })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    checkPassword(data.password);
+    assertAdminSession();
     const store = await savePanaderias(data.rows, data.sourceFilename ?? null);
     return { ok: true, inserted: store.rows.length, uploadedAt: store.uploadedAt };
   });
@@ -60,14 +70,13 @@ export const uploadReleasedFile = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z
       .object({
-        password: z.string().min(1).max(200),
         filename: z.string().min(1).max(255),
         contentBase64: z.string().min(1),
       })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    checkPassword(data.password);
+    assertAdminSession();
     const bytes = Uint8Array.from(atob(data.contentBase64), (c) => c.charCodeAt(0));
     await saveReleasedFile(data.filename, bytes);
     return { ok: true };
