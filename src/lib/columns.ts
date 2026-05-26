@@ -89,9 +89,20 @@ const EXCEL_HEADERS = [
 
 export const UNIQUE_ID_COLUMN = "Unique ID";
 export const CIUDAD_COLUMN = "Ciudad";
+export const LOCALIDAD_COLUMN = "Localidad";
+export const UNIDAD_CENSAL_COLUMN = "Unidad Censal";
 
+/** Valor para filtrar: primero Ciudad, si vacío Localidad (como en ejemplo.xlsx). */
 export function getCiudadFromRow(row: Record<string, unknown>): string {
-  const v = row[CIUDAD_COLUMN];
+  for (const col of [CIUDAD_COLUMN, LOCALIDAD_COLUMN]) {
+    const v = row[col];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  return "";
+}
+
+export function getUnidadCensalFromRow(row: Record<string, unknown>): string {
+  const v = row[UNIDAD_CENSAL_COLUMN];
   if (v != null && String(v).trim()) return String(v).trim();
   return "";
 }
@@ -163,6 +174,14 @@ export function photoUrlForCell(row: Record<string, unknown>, col: DisplayColumn
   const raw = pick(row, col.source);
   if (raw == null || raw === "") return null;
   return driveThumbnail(String(raw), 400);
+}
+
+/** Versión grande para vista ampliada (modal). */
+export function photoLargeUrlForCell(row: Record<string, unknown>, col: DisplayColumn): string | null {
+  if (col.kind !== "photo") return null;
+  const raw = pick(row, col.source);
+  if (raw == null || raw === "") return null;
+  return driveThumbnail(String(raw), 1600);
 }
 
 export function buildRowFromSheet(row: Record<string, unknown>) {

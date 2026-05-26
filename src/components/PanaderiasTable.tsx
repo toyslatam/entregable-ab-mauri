@@ -1,40 +1,68 @@
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { getPanaderiasPage, getPanaderiasCiudades } from "@/lib/admin.functions";
-import { DISPLAY_COLUMNS, formatCell, photoUrlForCell } from "@/lib/columns";
+import {
+  getPanaderiasPage,
+  getPanaderiasCiudades,
+  getPanaderiasUnidadesCensales,
+} from "@/lib/admin.functions";
+import {
+  DISPLAY_COLUMNS,
+  formatCell,
+  photoLargeUrlForCell,
+  photoUrlForCell,
+} from "@/lib/columns";
 
 const PAGE_SIZE = 15;
 const COL_COUNT = DISPLAY_COLUMNS.length;
+
+type LightboxImage = { src: string; alt: string };
 
 export function PanaderiasTable() {
   const [page, setPage] = useState(1);
   const [searchId, setSearchId] = useState("");
   const [debouncedId, setDebouncedId] = useState("");
   const [ciudad, setCiudad] = useState("");
+  const [unidadCensal, setUnidadCensal] = useState("");
+  const [lightbox, setLightbox] = useState<LightboxImage | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedId(searchId), 300);
     return () => clearTimeout(t);
   }, [searchId]);
 
-  useEffect(() => setPage(1), [debouncedId, ciudad]);
+  useEffect(() => setPage(1), [debouncedId, ciudad, unidadCensal]);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [lightbox]);
 
   const fetchPage = useServerFn(getPanaderiasPage);
   const fetchCiudades = useServerFn(getPanaderiasCiudades);
+  const fetchUnidades = useServerFn(getPanaderiasUnidadesCensales);
 
   const ciudadesQ = useQuery({
     queryKey: ["pan-ciudades"],
     queryFn: () => fetchCiudades(),
   });
 
-  const showCiudadFilter = ciudadesQ.data?.showCiudadFilter === true;
-  useEffect(() => {
-    if (!showCiudadFilter) setCiudad("");
-  }, [showCiudadFilter]);
+  const unidadesQ = useQuery({
+    queryKey: ["pan-unidades-censales"],
+    queryFn: () => fetchUnidades(),
+  });
 
   const q = useQuery({
-    queryKey: ["pan-page", page, debouncedId, ciudad],
+    queryKey: ["pan-page", page, debouncedId, ciudad, unidadCensal],
     queryFn: () =>
       fetchPage({
         data: {
@@ -42,6 +70,7 @@ export function PanaderiasTable() {
           pageSize: PAGE_SIZE,
           searchId: debouncedId || undefined,
           ciudad: ciudad || undefined,
+          unidadCensal: unidadCensal || undefined,
         },
       }),
   });
@@ -50,33 +79,70 @@ export function PanaderiasTable() {
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rows = q.data?.rows ?? [];
   const ciudades = ciudadesQ.data?.ciudades ?? [];
+  const unidades = unidadesQ.data?.unidades ?? [];
 
   return (
     <div className="no-copy">
       <div className="flex flex-wrap items-end justify-between gap-4 mb-4">
         <h2 className="text-2xl font-semibold tracking-tight">ENTREGABLE AB MAURI</h2>
-        <div className="allow-interaction flex flex-wrap items-center gap-3">
-          <input
-            type="search"
-            placeholder="Buscar por ID…"
-            value={searchId}
-            onChange={(e) => setSearchId(e.target.value)}
-            className="px-3 py-2 rounded-md border bg-card w-56 text-sm"
-          />
-          {showCiudadFilter && (
+        <div className="allow-interaction flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-muted-foreground">Buscar por ID</span>
+            <input
+              type="search"
+              placeholder="Unique ID…"
+              value={searchId}
+              onChange={(e) => setSearchId(e.target.value)}
+              className="px-3 py-2 rounded-md border bg-card w-56"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-muted-foreground">Ciudad</span>
             <select
               value={ciudad}
               onChange={(e) => setCiudad(e.target.value)}
-              className="px-3 py-2 rounded-md border bg-card text-sm min-w-[180px]"
-              aria-label="Filtrar por ciudad"
+              disabled={ciudadesQ.isLoading}
+              className="px-3 py-2 rounded-md border bg-card min-w-[180px] disabled:opacity-60"
             >
-              <option value="">Todas las ciudades</option>
+              <option value="">
+                {ciudadesQ.isLoading ? "Cargando…" : "Todas las ciudades"}
+              </option>
               {ciudades.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
               ))}
             </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-muted-foreground">Unidad Censal</span>
+            <select
+              value={unidadCensal}
+              onChange={(e) => setUnidadCensal(e.target.value)}
+              disabled={unidadesQ.isLoading}
+              className="px-3 py-2 rounded-md border bg-card min-w-[180px] disabled:opacity-60"
+            >
+              <option value="">
+                {unidadesQ.isLoading ? "Cargando…" : "Todas las unidades"}
+              </option>
+              {unidades.map((u) => (
+                <option key={u} value={u}>
+                  {u}
+                </option>
+              ))}
+            </select>
+          </label>
+          {(ciudad || unidadCensal) && (
+            <button
+              type="button"
+              onClick={() => {
+                setCiudad("");
+                setUnidadCensal("");
+              }}
+              className="px-3 py-2 text-sm rounded-md border bg-card hover:bg-muted self-end"
+            >
+              Limpiar filtros
+            </button>
           )}
         </div>
       </div>
@@ -116,7 +182,7 @@ export function PanaderiasTable() {
               {!q.isLoading && rows.length === 0 && (
                 <tr>
                   <td colSpan={COL_COUNT} className="px-4 py-10 text-center text-muted-foreground">
-                    No hay registros. El administrador debe subir el archivo Excel.
+                    No hay registros que coincidan con los filtros.
                   </td>
                 </tr>
               )}
@@ -130,19 +196,30 @@ export function PanaderiasTable() {
                         : "";
                       if (c.kind === "photo") {
                         const src = photoUrlForCell(data, c);
+                        const large = photoLargeUrlForCell(data, c) ?? src;
                         return (
                           <td key={c.key} className={`px-3 py-2 border-b ${stickyCell}`}>
                             {src ? (
-                              <img
-                                src={src}
-                                alt={c.label}
-                                referrerPolicy="no-referrer"
-                                loading="lazy"
-                                className="w-14 h-14 object-cover rounded-md border bg-muted"
-                                onError={(e) => {
-                                  (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
-                                }}
-                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  large && setLightbox({ src: large, alt: c.label })
+                                }
+                                className="allow-interaction block group focus:outline-none focus:ring-2 focus:ring-primary rounded-md"
+                                aria-label={`Ampliar ${c.label}`}
+                                title="Clic para ampliar"
+                              >
+                                <img
+                                  src={src}
+                                  alt={c.label}
+                                  referrerPolicy="no-referrer"
+                                  loading="lazy"
+                                  className="w-14 h-14 object-cover rounded-md border bg-muted transition group-hover:opacity-80 group-hover:ring-2 group-hover:ring-primary cursor-zoom-in"
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
+                                  }}
+                                />
+                              </button>
                             ) : (
                               <div className="w-14 h-14 rounded-md border bg-muted" />
                             )}
@@ -201,6 +278,35 @@ export function PanaderiasTable() {
           </button>
         </div>
       </div>
+
+      {lightbox && (
+        <div
+          className="allow-interaction fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={lightbox.alt}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLightbox(null);
+            }}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white text-xl leading-none flex items-center justify-center"
+            aria-label="Cerrar"
+          >
+            ×
+          </button>
+          <img
+            src={lightbox.src}
+            alt={lightbox.alt}
+            referrerPolicy="no-referrer"
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-[95vw] max-h-[90vh] object-contain rounded-md shadow-2xl"
+          />
+        </div>
+      )}
     </div>
   );
 }

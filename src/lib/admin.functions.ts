@@ -6,7 +6,11 @@ import {
   loadReleasedMeta,
   saveReleasedFile,
 } from "@/lib/data-store";
-import { getCiudadFromRow, UNIQUE_ID_COLUMN } from "@/lib/columns";
+import {
+  getCiudadFromRow,
+  getUnidadCensalFromRow,
+  UNIQUE_ID_COLUMN,
+} from "@/lib/columns";
 import type { PanaderiaRow } from "@/lib/data-store";
 import {
   disorderSortKey,
@@ -212,6 +216,7 @@ export const getPanaderiasPage = createServerFn({ method: "GET" })
         pageSize: z.number().int().min(1).max(100).default(15),
         searchId: z.string().max(200).optional(),
         ciudad: z.string().max(200).optional(),
+        unidadCensal: z.string().max(200).optional(),
       })
       .parse(d),
   )
@@ -229,7 +234,16 @@ export const getPanaderiasPage = createServerFn({ method: "GET" })
     const ciudadQ = data.ciudad?.trim();
     if (ciudadQ) {
       const c = ciudadQ.toLowerCase();
-      filtered = filtered.filter((r) => getCiudadFromRow(r.data as Record<string, unknown>).toLowerCase() === c);
+      filtered = filtered.filter(
+        (r) => getCiudadFromRow(r.data as Record<string, unknown>).toLowerCase() === c,
+      );
+    }
+    const unidadQ = data.unidadCensal?.trim();
+    if (unidadQ) {
+      const u = unidadQ.toLowerCase();
+      filtered = filtered.filter(
+        (r) => getUnidadCensalFromRow(r.data as Record<string, unknown>).toLowerCase() === u,
+      );
     }
 
     filtered = [...filtered].sort((a, b) =>
@@ -251,9 +265,21 @@ export const getPanaderiasCiudades = createServerFn({ method: "GET" }).handler(a
     const city = getCiudadFromRow(r.data as Record<string, unknown>);
     if (city) cities.add(city);
   }
-  const ciudades = [...cities].sort((a, b) => a.localeCompare(b, "es"));
   return {
-    ciudades,
-    showCiudadFilter: ciudades.length > 0,
+    ciudades: [...cities].sort((a, b) => a.localeCompare(b, "es")),
   };
 });
+
+export const getPanaderiasUnidadesCensales = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const store = await loadPanaderias();
+    const set = new Set<string>();
+    for (const r of store?.rows ?? []) {
+      const v = getUnidadCensalFromRow(r.data as Record<string, unknown>);
+      if (v) set.add(v);
+    }
+    return {
+      unidades: [...set].sort((a, b) => a.localeCompare(b, "es", { numeric: true })),
+    };
+  },
+);
