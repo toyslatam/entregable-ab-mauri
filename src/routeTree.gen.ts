@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as DatosLiberadosRouteImport } from './routes/datos-liberados'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiReleasedDownloadRouteImport } from './routes/api.released-download'
@@ -17,6 +18,11 @@ import { Route as ApiReleasedDownloadRouteImport } from './routes/api.released-d
 const DatosLiberadosRoute = DatosLiberadosRouteImport.update({
   id: '/datos-liberados',
   path: '/datos-liberados',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/datos-liberados': typeof DatosLiberadosRoute
+  '/login': typeof LoginRoute
   '/api/released-download': typeof ApiReleasedDownloadRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/datos-liberados': typeof DatosLiberadosRoute
+  '/login': typeof LoginRoute
   '/api/released-download': typeof ApiReleasedDownloadRoute
 }
 export interface FileRoutesById {
@@ -52,18 +60,20 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/datos-liberados': typeof DatosLiberadosRoute
+  '/login': typeof LoginRoute
   '/api/released-download': typeof ApiReleasedDownloadRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/datos-liberados' | '/api/released-download'
+  fullPaths: '/' | '/admin' | '/datos-liberados' | '/login' | '/api/released-download'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/datos-liberados' | '/api/released-download'
+  to: '/' | '/admin' | '/datos-liberados' | '/login' | '/api/released-download'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/datos-liberados'
+    | '/login'
     | '/api/released-download'
   fileRoutesById: FileRoutesById
 }
@@ -71,6 +81,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   DatosLiberadosRoute: typeof DatosLiberadosRoute
+  LoginRoute: typeof LoginRoute
   ApiReleasedDownloadRoute: typeof ApiReleasedDownloadRoute
 }
 
@@ -81,6 +92,13 @@ declare module '@tanstack/react-router' {
       path: '/datos-liberados'
       fullPath: '/datos-liberados'
       preLoaderRoute: typeof DatosLiberadosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -111,6 +129,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   DatosLiberadosRoute: DatosLiberadosRoute,
+  LoginRoute: LoginRoute,
   ApiReleasedDownloadRoute: ApiReleasedDownloadRoute,
 }
 export const routeTree = rootRouteImport

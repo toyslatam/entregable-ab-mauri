@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { readReleasedFile } from "@/lib/data-store";
+import { hasAdminSession } from "@/lib/admin-session";
 
 const MIME: Record<string, string> = {
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -12,6 +13,9 @@ export const Route = createFileRoute("/api/released-download")({
   server: {
     handlers: {
       GET: async () => {
+        if (!hasAdminSession()) {
+          return new Response("No autorizado", { status: 401 });
+        }
         const file = await readReleasedFile();
         if (!file) {
           return new Response("No hay archivo publicado", { status: 404 });

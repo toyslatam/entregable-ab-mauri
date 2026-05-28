@@ -54,7 +54,7 @@ export function clearAdminSessionCookie() {
 export function assertAdminSession() {
   const token = getCookie(COOKIE_NAME);
   if (!isValidSessionToken(token)) {
-    throw new Error("Sesión no válida. Inicia sesión de nuevo en /admin");
+    throw new Error("Sesión no válida. Inicia sesión de nuevo.");
   }
 }
 

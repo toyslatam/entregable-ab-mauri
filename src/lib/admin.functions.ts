@@ -196,6 +196,7 @@ export const uploadReleasedFile = createServerFn({ method: "POST" })
   });
 
 export const getReleasedFileUrl = createServerFn({ method: "GET" }).handler(async () => {
+  assertAdminSession();
   const meta = await loadReleasedMeta();
   if (!meta) return { file: null };
   return {
@@ -221,6 +222,7 @@ export const getPanaderiasPage = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data }) => {
+    assertAdminSession();
     const store = await loadPanaderias();
     if (!store?.rows.length) return { rows: [], total: 0 };
 
@@ -259,6 +261,7 @@ export const getPanaderiasPage = createServerFn({ method: "GET" })
   });
 
 export const getPanaderiasCiudades = createServerFn({ method: "GET" }).handler(async () => {
+  assertAdminSession();
   const store = await loadPanaderias();
   const cities = new Set<string>();
   for (const r of store?.rows ?? []) {
@@ -272,6 +275,7 @@ export const getPanaderiasCiudades = createServerFn({ method: "GET" }).handler(a
 
 export const getPanaderiasUnidadesCensales = createServerFn({ method: "GET" }).handler(
   async () => {
+    assertAdminSession();
     const store = await loadPanaderias();
     const set = new Set<string>();
     for (const r of store?.rows ?? []) {
