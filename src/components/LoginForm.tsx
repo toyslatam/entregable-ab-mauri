@@ -44,12 +44,12 @@ export function LoginForm({
           <label className="block text-sm">
             <span className="font-medium text-muted-foreground">Correo</span>
             <input
-              type="email"
+              type="text"
               autoFocus
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="correo@empresa.com"
+              placeholder="admin o correo@empresa.com"
               className="mt-1 w-full px-3 py-2 rounded-md border bg-background text-sm"
             />
           </label>
