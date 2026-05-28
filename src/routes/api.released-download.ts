@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { readReleasedFile } from "@/lib/data-store";
-import { hasAdminSession } from "@/lib/admin-session";
+import { getSession } from "@/lib/admin-session";
+import { findUserByEmail } from "@/lib/users-store";
 
 const MIME: Record<string, string> = {
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -13,8 +14,15 @@ export const Route = createFileRoute("/api/released-download")({
   server: {
     handlers: {
       GET: async () => {
-        if (!hasAdminSession()) {
+        const session = getSession();
+        if (!session) {
           return new Response("No autorizado", { status: 401 });
+        }
+        if (!session.isMaster) {
+          const user = await findUserByEmail(session.email);
+          if (!user?.active || user.mustChangePassword) {
+            return new Response("No autorizado", { status: 401 });
+          }
         }
         const file = await readReleasedFile();
         if (!file) {

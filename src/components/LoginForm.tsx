@@ -11,8 +11,9 @@ type Props = {
 export function LoginForm({
   onSuccess,
   title = "Acceso al entregable",
-  description = "Introduce la contraseña de administrador para ver la tabla y los datos.",
+  description = "Ingresa con tu correo y contraseña para ver la tabla y los datos.",
 }: Props) {
+  const [email, setEmail] = useState("");
   const [input, setInput] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -23,7 +24,8 @@ export function LoginForm({
     setErr(null);
     setLoading(true);
     try {
-      await login({ data: { password: input } });
+      await login({ data: { email: email || undefined, password: input } });
+      setEmail("");
       setInput("");
       await onSuccess();
     } catch (e) {
@@ -40,10 +42,21 @@ export function LoginForm({
         <p className="text-sm text-muted-foreground mt-1">{description}</p>
         <form onSubmit={onSubmit} className="mt-5 space-y-3">
           <label className="block text-sm">
+            <span className="font-medium text-muted-foreground">Correo</span>
+            <input
+              type="email"
+              autoFocus
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="correo@empresa.com"
+              className="mt-1 w-full px-3 py-2 rounded-md border bg-background text-sm"
+            />
+          </label>
+          <label className="block text-sm">
             <span className="font-medium text-muted-foreground">Contraseña</span>
             <input
               type="password"
-              autoFocus
               autoComplete="current-password"
               value={input}
               onChange={(e) => setInput(e.target.value)}

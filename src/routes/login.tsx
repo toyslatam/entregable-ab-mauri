@@ -33,6 +33,9 @@ function LoginPage() {
   }
 
   if (session.data?.authenticated) {
+    if (session.data.user?.mustChangePassword) {
+      return <Navigate to="/cambiar-contrasena" />;
+    }
     const to = redirect && redirect.startsWith("/") && !redirect.startsWith("/login")
       ? redirect
       : "/";
@@ -42,7 +45,11 @@ function LoginPage() {
   return (
     <LoginForm
       onSuccess={async () => {
-        await session.refetch();
+        const next = await session.refetch();
+        if (next.data?.user?.mustChangePassword) {
+          await router.navigate({ to: "/cambiar-contrasena" });
+          return;
+        }
         const to = redirect && redirect.startsWith("/") && !redirect.startsWith("/login")
           ? redirect
           : "/";

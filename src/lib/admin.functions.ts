@@ -19,11 +19,12 @@ import {
   scrambleUniqueIdDisplay,
 } from "@/lib/id-scramble";
 import {
-  assertAdminSession,
   checkAdminPassword,
   clearAdminSessionCookie,
-  hasAdminSession,
+  getMasterAdminEmail,
+  getSession,
   setAdminSessionCookie,
+  type SessionPayload,
 } from "@/lib/admin-session";
 import { parsePanaderiasWorkbook } from "@/lib/excel-import";
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
@@ -34,6 +35,64 @@ import {
   getBlobReadWriteToken,
   requireBlobReadWriteToken,
 } from "@/lib/blob-env";
+import { sendInviteEmail } from "@/lib/email";
+import {
+  changeUserPassword,
+  createUser,
+  findUserByEmail,
+  generateTemporaryPassword,
+  listUsers,
+  markUserLogin,
+  resetUserPassword,
+  setUserActive,
+  verifyPassword,
+  type UserRole,
+} from "@/lib/users-store";
+
+async function requireActiveSession(options: { allowMustChange?: boolean } = {}): Promise<SessionPayload> {
+  const session = getSession();
+  if (!session) throw new Error("Sesión no válida. Inicia sesión de nuevo.");
+  if (session.isMaster) return session;
+
+  const user = await findUserByEmail(session.email);
+  if (!user?.active) {
+    clearAdminSessionCookie();
+    throw new Error("Tu usuario está desactivado.");
+  }
+  if (user.mustChangePassword && !options.allowMustChange) {
+    throw new Error("Debes cambiar tu contraseña antes de continuar.");
+  }
+  return {
+    ...session,
+    name: user.name,
+    role: user.role,
+    mustChangePassword: user.mustChangePassword,
+  };
+}
+
+async function requireAdminSession(): Promise<SessionPayload> {
+  const session = await requireActiveSession();
+  if (session.role !== "admin") {
+    throw new Error("No tienes permisos de administrador.");
+  }
+  return session;
+}
+
+function canUseMasterLogin(email: string | undefined, password: string): boolean {
+  const normalized = (email ?? "").trim().toLowerCase();
+  const allowedEmail =
+    !normalized ||
+    normalized === "admin" ||
+    normalized === "administrador" ||
+    normalized === getMasterAdminEmail();
+  if (!allowedEmail) return false;
+  try {
+    checkAdminPassword(password);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function readPrivateBlobUrl(url: string): Promise<ArrayBuffer> {
   const token = getBlobReadWriteToken();
@@ -55,16 +114,78 @@ function sanitizeRowForPublic(row: PanaderiaRow): PanaderiaRow {
   return { ...row, data };
 }
 
-export const adminSession = createServerFn({ method: "GET" }).handler(async () => ({
-  authenticated: hasAdminSession(),
-}));
+export const adminSession = createServerFn({ method: "GET" }).handler(async () => {
+  const session = getSession();
+  if (!session) return { authenticated: false as const, user: null };
+  if (session.isMaster) {
+    return {
+      authenticated: true as const,
+      user: {
+        email: session.email,
+        name: session.name,
+        role: session.role,
+        mustChangePassword: false,
+        isMaster: true,
+      },
+    };
+  }
+
+  const user = await findUserByEmail(session.email);
+  if (!user?.active) {
+    clearAdminSessionCookie();
+    return { authenticated: false as const, user: null };
+  }
+
+  return {
+    authenticated: true as const,
+    user: {
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      mustChangePassword: user.mustChangePassword,
+      isMaster: false,
+    },
+  };
+});
 
 export const adminLogin = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ password: z.string().min(1).max(200) }).parse(d))
+  .inputValidator((d) =>
+    z
+      .object({
+        email: z.string().max(200).optional(),
+        password: z.string().min(1).max(200),
+      })
+      .parse(d),
+  )
   .handler(async ({ data }) => {
-    checkAdminPassword(data.password);
-    setAdminSessionCookie();
-    return { ok: true };
+    if (canUseMasterLogin(data.email, data.password)) {
+      setAdminSessionCookie({
+        email: getMasterAdminEmail(),
+        name: "Administrador",
+        role: "admin",
+        mustChangePassword: false,
+        isMaster: true,
+      });
+      return { ok: true, mustChangePassword: false };
+    }
+
+    const email = data.email?.trim().toLowerCase();
+    if (!email) throw new Error("Ingresa correo y contraseña.");
+
+    const user = await findUserByEmail(email);
+    if (!user?.active) throw new Error("Correo o contraseña incorrectos.");
+    const valid = await verifyPassword(data.password, user.passwordHash);
+    if (!valid) throw new Error("Correo o contraseña incorrectos.");
+
+    await markUserLogin(user.email);
+    setAdminSessionCookie({
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      mustChangePassword: user.mustChangePassword,
+      isMaster: false,
+    });
+    return { ok: true, mustChangePassword: user.mustChangePassword };
   });
 
 export const adminLogout = createServerFn({ method: "POST" }).handler(async () => {
@@ -74,7 +195,7 @@ export const adminLogout = createServerFn({ method: "POST" }).handler(async () =
 
 /** Diagnóstico (solo admin): ¿el servidor ve el token de Blob? */
 export const blobStorageStatus = createServerFn({ method: "GET" }).handler(async () => {
-  assertAdminSession();
+  await requireAdminSession();
   const token = getBlobReadWriteToken();
   const storeId = process.env.BLOB_STORE_ID?.trim();
   return {
@@ -86,6 +207,104 @@ export const blobStorageStatus = createServerFn({ method: "GET" }).handler(async
     tokenLength: token?.length ?? 0,
   };
 });
+
+const userInput = z.object({
+  email: z.string().email().max(200),
+  name: z.string().min(1).max(120),
+  role: z.enum(["admin", "viewer"]).default("viewer"),
+  sendEmail: z.boolean().default(true),
+});
+
+export const listPortalUsers = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdminSession();
+  return { users: await listUsers() };
+});
+
+export const createPortalUser = createServerFn({ method: "POST" })
+  .inputValidator((d) => userInput.parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminSession();
+    const temporaryPassword = generateTemporaryPassword();
+    const user = await createUser({
+      email: data.email,
+      name: data.name,
+      role: data.role as UserRole,
+      temporaryPassword,
+    });
+
+    let emailSent = false;
+    let emailError: string | null = null;
+    if (data.sendEmail) {
+      try {
+        await sendInviteEmail({
+          to: user.email,
+          name: user.name,
+          temporaryPassword,
+        });
+        emailSent = true;
+      } catch (e) {
+        emailError = (e as Error).message;
+      }
+    }
+
+    return { user, temporaryPassword, emailSent, emailError };
+  });
+
+export const resetPortalUserPassword = createServerFn({ method: "POST" })
+  .inputValidator((d) =>
+    z.object({ email: z.string().email().max(200), sendEmail: z.boolean().default(true) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    await requireAdminSession();
+    const temporaryPassword = generateTemporaryPassword();
+    const user = await resetUserPassword(data.email, temporaryPassword);
+
+    let emailSent = false;
+    let emailError: string | null = null;
+    if (data.sendEmail) {
+      try {
+        await sendInviteEmail({
+          to: user.email,
+          name: user.name,
+          temporaryPassword,
+        });
+        emailSent = true;
+      } catch (e) {
+        emailError = (e as Error).message;
+      }
+    }
+
+    return { user, temporaryPassword, emailSent, emailError };
+  });
+
+export const setPortalUserActive = createServerFn({ method: "POST" })
+  .inputValidator((d) =>
+    z.object({ email: z.string().email().max(200), active: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    await requireAdminSession();
+    return { user: await setUserActive(data.email, data.active) };
+  });
+
+export const changeOwnPassword = createServerFn({ method: "POST" })
+  .inputValidator((d) =>
+    z.object({ newPassword: z.string().min(8).max(200) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const session = await requireActiveSession({ allowMustChange: true });
+    if (session.isMaster) {
+      throw new Error("La clave maestra se cambia desde las variables de entorno.");
+    }
+    const user = await changeUserPassword(session.email, data.newPassword);
+    setAdminSessionCookie({
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      mustChangePassword: false,
+      isMaster: false,
+    });
+    return { ok: true };
+  });
 
 const BLOB_CONTENT_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -100,7 +319,7 @@ export const getBlobClientToken = createServerFn({ method: "POST" })
     z.object({ pathname: z.string().min(1).max(500) }).parse(d),
   )
   .handler(async ({ data }) => {
-    assertAdminSession();
+    await requireAdminSession();
     const rw = requireBlobReadWriteToken();
     const clientToken = await generateClientTokenFromReadWriteToken({
       pathname: data.pathname,
@@ -124,7 +343,7 @@ export const processPanaderiasFromBlob = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    assertAdminSession();
+    await requireAdminSession();
     const buffer = await readPrivateBlobUrl(data.blobUrl);
     const { sheetName, rows } = parsePanaderiasWorkbook(buffer);
     if (!rows.length) throw new Error(`No se encontraron filas en "${sheetName}"`);
@@ -147,7 +366,7 @@ export const processReleasedFromBlob = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    assertAdminSession();
+    await requireAdminSession();
     const bytes = new Uint8Array(await readPrivateBlobUrl(data.blobUrl));
     await saveReleasedFile(data.sourceFilename, bytes);
     return { ok: true };
@@ -164,7 +383,7 @@ export const uploadPanaderiasExcel = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    assertAdminSession();
+    await requireAdminSession();
     const buffer = Buffer.from(data.contentBase64, "base64");
     const { sheetName, rows } = parsePanaderiasWorkbook(
       buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
@@ -189,14 +408,14 @@ export const uploadReleasedFile = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    assertAdminSession();
+    await requireAdminSession();
     const bytes = Uint8Array.from(atob(data.contentBase64), (c) => c.charCodeAt(0));
     await saveReleasedFile(data.filename, bytes);
     return { ok: true };
   });
 
 export const getReleasedFileUrl = createServerFn({ method: "GET" }).handler(async () => {
-  assertAdminSession();
+  await requireActiveSession();
   const meta = await loadReleasedMeta();
   if (!meta) return { file: null };
   return {
@@ -222,7 +441,7 @@ export const getPanaderiasPage = createServerFn({ method: "GET" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    assertAdminSession();
+    await requireActiveSession();
     const store = await loadPanaderias();
     if (!store?.rows.length) return { rows: [], total: 0 };
 
@@ -261,7 +480,7 @@ export const getPanaderiasPage = createServerFn({ method: "GET" })
   });
 
 export const getPanaderiasCiudades = createServerFn({ method: "GET" }).handler(async () => {
-  assertAdminSession();
+  await requireActiveSession();
   const store = await loadPanaderias();
   const cities = new Set<string>();
   for (const r of store?.rows ?? []) {
@@ -275,7 +494,7 @@ export const getPanaderiasCiudades = createServerFn({ method: "GET" }).handler(a
 
 export const getPanaderiasUnidadesCensales = createServerFn({ method: "GET" }).handler(
   async () => {
-    assertAdminSession();
+    await requireActiveSession();
     const store = await loadPanaderias();
     const set = new Set<string>();
     for (const r of store?.rows ?? []) {

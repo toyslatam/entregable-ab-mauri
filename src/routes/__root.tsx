@@ -83,7 +83,13 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function NavBar({ onLogout }: { onLogout: () => void | Promise<void> }) {
+function NavBar({
+  onLogout,
+  showAdmin,
+}: {
+  onLogout: () => void | Promise<void>;
+  showAdmin: boolean;
+}) {
   return (
     <header className="border-b bg-card">
       <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
@@ -104,12 +110,14 @@ function NavBar({ onLogout }: { onLogout: () => void | Promise<void> }) {
           >
             Datos liberados
           </Link>
-          <Link
-            to="/admin"
-            className="px-3 py-1.5 rounded-md hover:bg-muted [&.active]:bg-muted [&.active]:font-medium"
-          >
-            Administración
-          </Link>
+          {showAdmin && (
+            <Link
+              to="/admin"
+              className="px-3 py-1.5 rounded-md hover:bg-muted [&.active]:bg-muted [&.active]:font-medium"
+            >
+              Administración
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => void onLogout()}
@@ -136,6 +144,7 @@ function RootComponent() {
 function AuthGate() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isLogin = pathname === "/login";
+  const isChangePassword = pathname === "/cambiar-contrasena";
 
   const fetchSession = useServerFn(adminSession);
   const logout = useServerFn(adminLogout);
@@ -145,7 +154,7 @@ function AuthGate() {
     queryFn: () => fetchSession(),
   });
 
-  useContentProtection(!isLogin && Boolean(session.data?.authenticated));
+  useContentProtection(!isLogin && !isChangePassword && Boolean(session.data?.authenticated));
 
   async function onLogout() {
     await logout();
@@ -167,7 +176,11 @@ function AuthGate() {
     return <Navigate to="/login" search={{ redirect: pathname }} />;
   }
 
-  if (isLogin) {
+  if (authenticated && session.data?.user?.mustChangePassword && !isChangePassword) {
+    return <Navigate to="/cambiar-contrasena" />;
+  }
+
+  if (isLogin || isChangePassword) {
     return (
       <div className="min-h-screen bg-background">
         <Outlet />
@@ -178,7 +191,7 @@ function AuthGate() {
   return (
     <div className="min-h-screen bg-background relative no-copy protected-view">
       <Watermark />
-      <NavBar onLogout={onLogout} />
+      <NavBar onLogout={onLogout} showAdmin={session.data?.user?.role === "admin"} />
       <main className="max-w-7xl mx-auto px-6 py-8 relative z-[1]">
         <Outlet />
       </main>

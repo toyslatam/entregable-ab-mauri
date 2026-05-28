@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as DatosLiberadosRouteImport } from './routes/datos-liberados'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as CambiarContrasenaRouteImport } from './routes/cambiar-contrasena'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiReleasedDownloadRouteImport } from './routes/api.released-download'
@@ -23,6 +24,11 @@ const DatosLiberadosRoute = DatosLiberadosRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CambiarContrasenaRoute = CambiarContrasenaRouteImport.update({
+  id: '/cambiar-contrasena',
+  path: '/cambiar-contrasena',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/datos-liberados': typeof DatosLiberadosRoute
   '/login': typeof LoginRoute
+  '/cambiar-contrasena': typeof CambiarContrasenaRoute
   '/api/released-download': typeof ApiReleasedDownloadRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/datos-liberados': typeof DatosLiberadosRoute
   '/login': typeof LoginRoute
+  '/cambiar-contrasena': typeof CambiarContrasenaRoute
   '/api/released-download': typeof ApiReleasedDownloadRoute
 }
 export interface FileRoutesById {
@@ -61,19 +69,21 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/datos-liberados': typeof DatosLiberadosRoute
   '/login': typeof LoginRoute
+  '/cambiar-contrasena': typeof CambiarContrasenaRoute
   '/api/released-download': typeof ApiReleasedDownloadRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/datos-liberados' | '/login' | '/api/released-download'
+  fullPaths: '/' | '/admin' | '/datos-liberados' | '/login' | '/cambiar-contrasena' | '/api/released-download'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/datos-liberados' | '/login' | '/api/released-download'
+  to: '/' | '/admin' | '/datos-liberados' | '/login' | '/cambiar-contrasena' | '/api/released-download'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/datos-liberados'
     | '/login'
+    | '/cambiar-contrasena'
     | '/api/released-download'
   fileRoutesById: FileRoutesById
 }
@@ -82,6 +92,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   DatosLiberadosRoute: typeof DatosLiberadosRoute
   LoginRoute: typeof LoginRoute
+  CambiarContrasenaRoute: typeof CambiarContrasenaRoute
   ApiReleasedDownloadRoute: typeof ApiReleasedDownloadRoute
 }
 
@@ -99,6 +110,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cambiar-contrasena': {
+      id: '/cambiar-contrasena'
+      path: '/cambiar-contrasena'
+      fullPath: '/cambiar-contrasena'
+      preLoaderRoute: typeof CambiarContrasenaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -130,6 +148,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   DatosLiberadosRoute: DatosLiberadosRoute,
   LoginRoute: LoginRoute,
+  CambiarContrasenaRoute: CambiarContrasenaRoute,
   ApiReleasedDownloadRoute: ApiReleasedDownloadRoute,
 }
 export const routeTree = rootRouteImport
